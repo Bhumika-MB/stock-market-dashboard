@@ -1,24 +1,27 @@
+import pandas as pd
+
+
 def get_model_info():
 
-    return [
-        {
-            "Model": "Linear Regression",
-            "Purpose": "Current prediction model",
-            "Status": "✅ Active"
-        },
-        {
-            "Model": "Support Vector Regression (SVR)",
-            "Purpose": "Non-linear regression",
-            "Status": "🚧 Planned"
-        },
-        {
-            "Model": "LSTM",
-            "Purpose": "Deep learning time-series forecasting",
-            "Status": "🚧 Planned"
-        },
-        {
-            "Model": "PCA + Linear Regression",
-            "Purpose": "Dimensionality reduction",
-            "Status": "🚧 Planned"
-        }
-    ]
+    return pd.DataFrame({
+        "Model": [
+            "Linear Regression",
+            "Support Vector Regression (SVR)",
+            "LSTM",
+            "PCA + Linear Regression"
+        ],
+
+        "Purpose": [
+            "Current prediction model",
+            "Non-linear regression comparison",
+            "Deep learning time-series forecasting",
+            "Dimensionality reduction"
+        ],
+
+        "Status": [
+            "✅ Active",
+            "✅ Active",
+            "🚧 Future Enhancement",
+            "🚧 Future Enhancement"
+        ]
+    })

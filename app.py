@@ -10,6 +10,9 @@ from services.company_info import get_company_info
 from models.predictor import predict_stock_price
 from services.recommendation import get_recommendation
 from services.model_info import get_model_info
+from services.technical_indicators import add_technical_indicators
+from services.risk_analysis import classify_risk
+from services.trend import get_market_trend
 
 # -------------------- Page Configuration -------------------- #
 st.set_page_config(
@@ -21,7 +24,9 @@ st.set_page_config(
 # -------------------- Title -------------------- #
 st.title("📈 Stock Market Prediction Dashboard")
 
-st.caption("Analyze stock performance with interactive charts and real-time market data.")
+st.caption(
+    "Analyze stock performance using technical indicators, machine learning models, and interactive visualizations."
+)
 
 st.divider()
 
@@ -106,6 +111,11 @@ show_sma50 = st.sidebar.checkbox(
     value=True
 )
 
+show_ema20 = st.sidebar.checkbox(
+    "Show 20-Day EMA",
+    value=True
+)
+
 # -------------------- Download Data -------------------- #
 
 if ticker == "":
@@ -117,6 +127,7 @@ data = get_stock_data(
     period_map[period]
 )
 data = add_moving_averages(data)
+data = add_technical_indicators(data)
 company = get_company_info(ticker)
 
 if len(data) < 30:
@@ -148,6 +159,165 @@ with col2:
 
 # -------------------- KPI Cards -------------------- #
 
+# -------------------- Historical Stock Chart -------------------- #
+
+st.subheader("📈 Historical Stock Chart")
+
+fig = go.Figure()
+
+if chart_type == "Line Chart":
+
+    # Closing Price
+    fig.add_trace(
+        go.Scatter(
+            x=data.index,
+            y=data["Close"],
+            mode="lines",
+            name="Closing Price",
+            line=dict(width=3)
+        )
+    )
+
+    # 20-Day SMA
+    if show_sma20:
+        fig.add_trace(
+            go.Scatter(
+                x=data.index,
+                y=data["SMA20"],
+                mode="lines",
+                name="20-Day SMA"
+            )
+        )
+
+    # 50-Day SMA
+    if show_sma50:
+        fig.add_trace(
+            go.Scatter(
+                x=data.index,
+                y=data["SMA50"],
+                mode="lines",
+                name="50-Day SMA"
+            )
+        )
+
+    # 20-Day EMA
+    if show_ema20:
+        fig.add_trace(
+            go.Scatter(
+                x=data.index,
+                y=data["EMA20"],
+                mode="lines",
+                name="20-Day EMA"
+            )
+        )
+
+else:
+
+    fig.add_trace(
+        go.Candlestick(
+            x=data.index,
+            open=data["Open"],
+            high=data["High"],
+            low=data["Low"],
+            close=data["Close"],
+            name="Candlestick"
+        )
+    )
+
+fig.update_layout(
+    title=f"{selected_company} Historical Stock Price",
+    xaxis_title="Date",
+    yaxis_title="Price (USD)",
+    template="plotly_white",
+    hovermode="x unified",
+    height=600,
+    xaxis_rangeslider_visible=False
+)
+
+st.plotly_chart(fig, width="stretch")
+# -------------------- Download Stock Data -------------------- #
+
+csv = data.to_csv().encode("utf-8")
+
+st.download_button(
+    label="⬇ Download Stock Data (CSV)",
+    data=csv,
+    file_name=f"{ticker}_stock_data.csv",
+    mime="text/csv"
+)
+
+st.subheader("📊 Technical Indicators")
+
+col1, col2, col3 = st.columns(3)
+
+# -------- Daily Return -------- #
+
+with col1:
+
+    st.metric(
+        "Daily Return",
+        f"{data['Daily Return'].iloc[-1]:.2f}%"
+    )
+
+
+# -------- Volatility -------- #
+
+with col2:
+
+    volatility = data["Volatility"].iloc[-1]
+
+    if pd.isna(volatility):
+
+        st.metric(
+            "Volatility",
+            "--"
+        )
+
+        st.caption("Need 20 trading days")
+
+    else:
+
+        st.metric(
+            "Volatility",
+            f"{volatility:.2f}"
+        )
+
+
+# -------- RSI -------- #
+
+with col3:
+
+    rsi = data["RSI"].iloc[-1]
+
+    st.metric(
+        "RSI",
+        f"{rsi:.2f}"
+    )
+
+    if rsi > 70:
+        st.caption("Overbought")
+
+    elif rsi < 30:
+        st.caption("Oversold")
+
+    else:
+        st.caption("Neutral")
+
+st.subheader("📈 Market Trend")
+
+trend, trend_reason = get_market_trend(data)
+
+if "Bullish" in trend:
+    st.success(trend)
+
+elif "Bearish" in trend:
+    st.error(trend)
+
+else:
+    st.warning(trend)
+
+st.caption(trend_reason)
+
 st.subheader("🤖 AI Stock Prediction")
 
 if predictions is None:
@@ -161,6 +331,8 @@ else:
 
     lr_predictions = predictions["Linear Regression"]
     svr_predictions = predictions["SVR"]
+    lr_score = predictions["LR Score"]
+    svr_score = predictions["SVR Score"]
 
     st.metric(
         "Predicted Price (30 Days)",
@@ -209,13 +381,27 @@ else:
         "Linear Regression",
         "Support Vector Regression"
     ],
-    "Predicted Price": [
+    "30-Day Prediction": [
         round(lr_predictions[-1], 2),
         round(svr_predictions[-1], 2)
     ]
     })
 
     st.table(comparison)
+    st.subheader("📈 Model Accuracy")
+
+    score_df = pd.DataFrame({
+    "Model": [
+        "Linear Regression",
+        "Support Vector Regression"
+    ],
+    "R² Score": [
+        f"{lr_score * 100:.1f}%",
+        f"{svr_score * 100:.1f}%"
+    ]
+})
+
+    st.table(score_df)
 
     recommendation, reason = get_recommendation(
         data,
@@ -227,9 +413,22 @@ else:
     st.success(recommendation)
 
     st.info(reason)
+    
+    st.subheader("🛡 Risk Analysis")
 
-    st.subheader("🧠 Machine Learning Models")
+risk = classify_risk(data)
 
-    models = get_model_info()
+if "Low" in risk:
+    st.success(risk)
 
-    st.table(models)
+elif "Medium" in risk:
+    st.warning(risk)
+
+else:
+    st.error(risk)
+
+st.subheader("🧠 Machine Learning Models")
+
+models = get_model_info()
+
+st.table(models)
