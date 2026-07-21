@@ -1,4 +1,6 @@
 import pandas as pd
+
+from services.indicators import calculate_metrics
 import streamlit as st
 import plotly.graph_objects as go
 
@@ -12,9 +14,7 @@ from services.technical_indicators import add_technical_indicators
 from services.risk_analysis import classify_risk
 from services.trend import get_market_trend
 
-
 # -------------------- Page Configuration -------------------- #
-
 st.set_page_config(
     page_title="Stock Market Prediction Dashboard",
     page_icon="📈",
@@ -22,7 +22,6 @@ st.set_page_config(
 )
 
 # -------------------- Title -------------------- #
-
 st.title("📈 Stock Market Prediction Dashboard")
 
 st.caption(
@@ -32,7 +31,6 @@ st.caption(
 st.divider()
 
 # -------------------- Sidebar -------------------- #
-
 popular_companies = {
     "Apple": "AAPL",
     "Microsoft": "MSFT",
@@ -57,7 +55,6 @@ selected_company = st.sidebar.selectbox(
     "⭐ Popular Companies",
     list(popular_companies.keys())
 )
-
 if selected_company == "Other...":
 
     ticker = st.sidebar.text_input(
@@ -65,22 +62,26 @@ if selected_company == "Other...":
         placeholder="Example: AAPL or RELIANCE.NS"
     ).upper()
 
+    company_name = ticker
+
 else:
 
     ticker = popular_companies[selected_company]
+    company_name = selected_company
+
 
 st.sidebar.markdown("---")
 
 period = st.sidebar.selectbox(
     "📅 Select Time Period",
-    [
-        "1 Month",
-        "3 Months",
-        "6 Months",
-        "1 Year",
-        "2 Years",
-        "5 Years"
-    ]
+    {
+        "1 Month": "1mo",
+        "3 Months": "3mo",
+        "6 Months": "6mo",
+        "1 Year": "1y",
+        "2 Years": "2y",
+        "5 Years": "5y"
+    }
 )
 
 period_map = {
@@ -98,7 +99,6 @@ chart_type = st.sidebar.radio(
     "📊 Chart Type",
     ["Line Chart", "Candlestick"]
 )
-
 st.sidebar.markdown("---")
 
 show_sma20 = st.sidebar.checkbox(
@@ -116,7 +116,7 @@ show_ema20 = st.sidebar.checkbox(
     value=True
 )
 
-# -------------------- Load Data -------------------- #
+# -------------------- Download Data -------------------- #
 
 if ticker == "":
     st.info("👈 Select a company or enter a stock ticker.")
@@ -126,10 +126,8 @@ data = get_stock_data(
     ticker,
     period_map[period]
 )
-
 data = add_moving_averages(data)
 data = add_technical_indicators(data)
-
 company = get_company_info(ticker)
 
 if len(data) < 30:
@@ -137,10 +135,8 @@ if len(data) < 30:
 else:
     predictions = predict_stock_price(data)
 
-# -------------------- Company Information -------------------- #
 
 st.info(f"### 📌 Currently Viewing: {selected_company} ({ticker})")
-
 st.subheader("🏢 Company Information")
 
 col1, col2 = st.columns(2)
@@ -154,12 +150,16 @@ with col2:
     st.write("**Country:**", company["country"])
     st.write("**Website:**", company["website"])
 
-    if company["market_cap"]:
-        st.write(f"**Market Cap:** ${company['market_cap']:,.0f}")
+    market_cap = company["market_cap"]
+
+    if market_cap:
+        st.write(f"**Market Cap:** ${market_cap:,.0f}")
     else:
         st.write("**Market Cap:** N/A")
 
-# -------------------- Historical Chart -------------------- #
+# -------------------- KPI Cards -------------------- #
+
+# -------------------- Historical Stock Chart -------------------- #
 
 st.subheader("📈 Historical Stock Chart")
 
@@ -167,6 +167,7 @@ fig = go.Figure()
 
 if chart_type == "Line Chart":
 
+    # Closing Price
     fig.add_trace(
         go.Scatter(
             x=data.index,
@@ -177,6 +178,7 @@ if chart_type == "Line Chart":
         )
     )
 
+    # 20-Day SMA
     if show_sma20:
         fig.add_trace(
             go.Scatter(
@@ -187,6 +189,7 @@ if chart_type == "Line Chart":
             )
         )
 
+    # 50-Day SMA
     if show_sma50:
         fig.add_trace(
             go.Scatter(
@@ -197,6 +200,7 @@ if chart_type == "Line Chart":
             )
         )
 
+    # 20-Day EMA
     if show_ema20:
         fig.add_trace(
             go.Scatter(
@@ -230,40 +234,56 @@ fig.update_layout(
     xaxis_rangeslider_visible=False
 )
 
-st.plotly_chart(fig, use_container_width=True)
-
-# -------------------- Download CSV -------------------- #
+st.plotly_chart(fig, width="stretch")
+# -------------------- Download Stock Data -------------------- #
 
 csv = data.to_csv().encode("utf-8")
 
 st.download_button(
-    "⬇ Download Stock Data (CSV)",
-    csv,
+    label="⬇ Download Stock Data (CSV)",
+    data=csv,
     file_name=f"{ticker}_stock_data.csv",
     mime="text/csv"
 )
-
-# -------------------- Technical Indicators -------------------- #
 
 st.subheader("📊 Technical Indicators")
 
 col1, col2, col3 = st.columns(3)
 
+# -------- Daily Return -------- #
+
 with col1:
+
     st.metric(
         "Daily Return",
         f"{data['Daily Return'].iloc[-1]:.2f}%"
     )
+
+
+# -------- Volatility -------- #
 
 with col2:
 
     volatility = data["Volatility"].iloc[-1]
 
     if pd.isna(volatility):
-        st.metric("Volatility", "--")
+
+        st.metric(
+            "Volatility",
+            "--"
+        )
+
         st.caption("Need 20 trading days")
+
     else:
-        st.metric("Volatility", f"{volatility:.2f}")
+
+        st.metric(
+            "Volatility",
+            f"{volatility:.2f}"
+        )
+
+
+# -------- RSI -------- #
 
 with col3:
 
@@ -283,8 +303,6 @@ with col3:
     else:
         st.caption("Neutral")
 
-# -------------------- Market Trend -------------------- #
-
 st.subheader("📈 Market Trend")
 
 trend, trend_reason = get_market_trend(data)
@@ -300,140 +318,29 @@ else:
 
 st.caption(trend_reason)
 
-# -------------------- AI Stock Prediction -------------------- #
+st.subheader("💡 AI Recommendation")
 
-st.subheader("🤖 AI Stock Prediction")
+st.success(recommendation)
+st.info(reason)
 
-if predictions is None:
+st.subheader("🛡 Risk Analysis")
 
-    st.warning(
-        "Not enough historical data to make a prediction. "
-        "Try selecting a longer time period."
-    )
+risk = classify_risk(data)
 
-else:
-
-    lr_predictions = predictions["Linear Regression"]
-    svr_predictions = predictions["SVR"]
-
-    lr_score = predictions["LR Score"]
-    svr_score = predictions["SVR Score"]
-
-    # Choose the better model
-    if svr_score > lr_score:
-        final_predictions = svr_predictions
-        predicted_price = svr_predictions[-1]
-        model_used = "Support Vector Regression"
-    else:
-        final_predictions = lr_predictions
-        predicted_price = lr_predictions[-1]
-        model_used = "Linear Regression"
-
-    st.metric(
-        "Predicted Price (30 Days)",
-        f"${predicted_price:.2f}"
-    )
-
-    st.info(
-        f"Prediction generated using **{model_used}** (highest R² score)."
-    )
-
-    prediction_dates = pd.date_range(
-        start=data.index[-1],
-        periods=len(final_predictions) + 1,
-        freq="B"
-    )[1:]
-
-    pred_fig = go.Figure()
-
-    pred_fig.add_trace(
-        go.Scatter(
-            x=data.index,
-            y=data["Close"],
-            mode="lines",
-            name="Historical Price"
-        )
-    )
-
-    pred_fig.add_trace(
-        go.Scatter(
-            x=prediction_dates,
-            y=final_predictions,
-            mode="lines",
-            name="Predicted Price",
-            line=dict(dash="dash")
-        )
-    )
-
-    pred_fig.update_layout(
-        title="30-Day Stock Forecast",
-        xaxis_title="Date",
-        yaxis_title="Price",
-        template="plotly_white"
-    )
-
-    st.plotly_chart(
-        pred_fig,
-        use_container_width=True
-    )
-
-    st.subheader("🤖 Model Comparison")
-
-    comparison = pd.DataFrame({
-
-        "Model": [
-            "Linear Regression",
-            "Support Vector Regression"
-        ],
-
-        "Predicted Closing Price": [
-            round(lr_predictions[-1], 2),
-            round(svr_predictions[-1], 2)
-        ],
-
-        "R² Score": [
-            f"{lr_score * 100:.1f}%",
-            f"{svr_score * 100:.1f}%"
-        ],
-
-
-    })
-
-    st.table(comparison)
-
-    recommendation, reason = get_recommendation(
-        data,
-        predicted_price
-    )
-    
-        # -------------------- AI Recommendation -------------------- #
-
-    st.subheader("💡 AI Recommendation")
-
-    st.success(recommendation)
-
-    st.info(reason)
-
-    # -------------------- Risk Analysis -------------------- #
-
-    st.subheader("🛡 Risk Analysis")
-
-    risk = classify_risk(data)
-
-    if "Low" in risk:
+if "Low" in risk:
         st.success(risk)
 
-    elif "Medium" in risk:
+elif "Medium" in risk:
         st.warning(risk)
 
-    else:
+else:
         st.error(risk)
 
-    # -------------------- Machine Learning Models -------------------- #
+st.subheader("🧠 Machine Learning Models")
 
-    st.subheader("🧠 Machine Learning Models")
+models = get_model_info()
 
-    models = get_model_info()
-
-    st.table(models)
-    
+st.table(models)
+st.caption(
+    "The dashboard compares predictions from Linear Regression and Support Vector Regression (SVR) and automatically displays the prediction from the model with the higher R² score."
+)
