@@ -6,22 +6,16 @@ def get_model_info():
     return pd.DataFrame({
         "Model": [
             "Linear Regression",
-            "Support Vector Regression (SVR)",
-            "LSTM",
-            "PCA + Linear Regression"
+            "Support Vector Regression (SVR)"
         ],
 
         "Purpose": [
-            "Current prediction model",
-            "Non-linear regression comparison",
-            "Deep learning time-series forecasting",
-            "Dimensionality reduction"
+            "30-day stock price prediction",
+            "Non-linear prediction comparison"
         ],
 
         "Status": [
             "✅ Active",
-            "✅ Active",
-            "🚧 Future Enhancement",
-            "🚧 Future Enhancement"
+            "✅ Active"
         ]
     })
