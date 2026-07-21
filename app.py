@@ -1,3 +1,5 @@
+import pandas as pd
+
 from services.indicators import calculate_metrics
 import streamlit as st
 import plotly.graph_objects as go
@@ -5,6 +7,9 @@ import plotly.graph_objects as go
 from services.stock_data import get_stock_data
 from services.moving_averages import add_moving_averages
 from services.company_info import get_company_info
+from models.predictor import predict_stock_price
+from services.recommendation import get_recommendation
+from services.model_info import get_model_info
 
 # -------------------- Page Configuration -------------------- #
 st.set_page_config(
@@ -59,8 +64,6 @@ else:
     ticker = popular_companies[selected_company]
     company_name = selected_company
 
-st.write("Selected Company:", company_name)
-st.write("Ticker:", ticker)
 
 st.sidebar.markdown("---")
 
@@ -104,7 +107,6 @@ show_sma50 = st.sidebar.checkbox(
 )
 
 # -------------------- Download Data -------------------- #
-# -------------------- Download Data -------------------- #
 
 if ticker == "":
     st.info("👈 Select a company or enter a stock ticker.")
@@ -116,6 +118,12 @@ data = get_stock_data(
 )
 data = add_moving_averages(data)
 company = get_company_info(ticker)
+
+if len(data) < 30:
+    predictions = None
+else:
+    predictions = predict_stock_price(data)
+
 
 st.info(f"### 📌 Currently Viewing: {selected_company} ({ticker})")
 st.subheader("🏢 Company Information")
@@ -140,122 +148,88 @@ with col2:
 
 # -------------------- KPI Cards -------------------- #
 
-st.subheader("📊 Market Summary")
+st.subheader("🤖 AI Stock Prediction")
 
-metrics = calculate_metrics(data)
+if predictions is None:
 
-col1, col2, col3, col4 = st.columns(4)
+    st.warning(
+        "Not enough historical data to make a prediction. "
+        "Try selecting a longer time period."
+    )
 
-col1.metric(
-    "Current Price",
-    f"${metrics['current_price']:.2f}"
-)
+else:
 
-col2.metric(
-    "Daily Change",
-    f"{metrics['daily_change']:.2f}",
-    f"{metrics['percent_change']:.2f}%"
-)
+    lr_predictions = predictions["Linear Regression"]
+    svr_predictions = predictions["SVR"]
 
-col3.metric(
-    "Highest Price",
-    f"${metrics['highest']:.2f}"
-)
+    st.metric(
+        "Predicted Price (30 Days)",
+        f"${lr_predictions[-1]:.2f}"
+    )
 
-col4.metric(
-    "Lowest Price",
-    f"${metrics['lowest']:.2f}"
-)
+    prediction_dates = pd.date_range(
+        start=data.index[-1],
+        periods=len(lr_predictions) + 1,
+        freq="B"
+    )[1:]
 
-# -------------------- Stock Chart -------------------- #
-st.subheader("📈 Stock Price Chart")
+    pred_fig = go.Figure()
 
-if chart_type == "Line Chart":
-
-    fig = go.Figure()
-
-    # Closing Price
-    fig.add_trace(
+    pred_fig.add_trace(
         go.Scatter(
             x=data.index,
             y=data["Close"],
             mode="lines",
-            name="Closing Price",
-            line=dict(width=3)
+            name="Historical Price"
         )
     )
 
-    # 20-Day SMA
-    if show_sma20:
-        fig.add_trace(
-            go.Scatter(
-                x=data.index,
-                y=data["SMA20"],
-                mode="lines",
-                name="20-Day SMA"
-            )
+    pred_fig.add_trace(
+        go.Scatter(
+            x=prediction_dates,
+            y=lr_predictions,
+            mode="lines",
+            name="Predicted Price",
+            line=dict(dash="dash")
         )
-
-    # 50-Day SMA
-    if show_sma50:
-        fig.add_trace(
-            go.Scatter(
-                x=data.index,
-                y=data["SMA50"],
-                mode="lines",
-                name="50-Day SMA"
-            )
-        )
-
-
-else:
-
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=data.index,
-                open=data["Open"],
-                high=data["High"],
-                low=data["Low"],
-                close=data["Close"],
-                name="Candlestick"
-            )
-        ]
     )
 
-fig.update_layout(
-    title=f"{selected_company} Stock Price",
-    xaxis_title="Date",
-    yaxis_title="Price (USD)",
-    template="plotly_white",
-    hovermode="x unified",
-    height=650,
-    xaxis_rangeslider_visible=False
-)
-
-st.plotly_chart(fig, width="stretch")
-st.subheader("📊 Trading Volume")
-
-volume_fig = go.Figure()
-
-volume_fig.add_trace(
-    go.Bar(
-        x=data.index,
-        y=data["Volume"],
-        name="Volume"
+    pred_fig.update_layout(
+        title="30-Day Stock Forecast",
+        xaxis_title="Date",
+        yaxis_title="Price",
+        template="plotly_white"
     )
-)
 
-volume_fig.update_layout(
-    title=f"{selected_company} Trading Volume",
-    xaxis_title="Date",
-    yaxis_title="Volume",
-    template="plotly_white",
-    height=300
-)
+    st.plotly_chart(pred_fig, width="stretch")
+    st.subheader("🤖 Model Comparison")
 
-st.plotly_chart(volume_fig, width="stretch")
+    comparison = pd.DataFrame({
+    "Model": [
+        "Linear Regression",
+        "Support Vector Regression"
+    ],
+    "Predicted Price": [
+        round(lr_predictions[-1], 2),
+        round(svr_predictions[-1], 2)
+    ]
+    })
 
-# -------------------- Data Table -------------------- #
-st.subheader("📋 Last 5 Trading Days")
-st.dataframe(data.tail(), width="stretch")
+    st.table(comparison)
+
+    recommendation, reason = get_recommendation(
+        data,
+        lr_predictions[-1]
+    )
+
+    st.subheader("💡 AI Recommendation")
+
+    st.success(recommendation)
+
+    st.info(reason)
+
+    st.subheader("🧠 Machine Learning Models")
+
+    models = get_model_info()
+
+    st.table(models)
